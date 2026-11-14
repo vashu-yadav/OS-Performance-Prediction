@@ -28,6 +28,7 @@ from os_performance_prediction.features.windows_features import (
     chronological_split,
 )
 from os_performance_prediction.profile_telemetry import DEFAULT_DATA, analyze_dataset
+from os_performance_prediction.runtime_guard import reject_streamlit_pipeline_entrypoint
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_RESULTS = PROJECT_ROOT / "results" / "windows_forecast"
@@ -382,6 +383,8 @@ def run_experiments(
 
 
 def main() -> int:
+    if reject_streamlit_pipeline_entrypoint("Model training and forecasting"):
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)

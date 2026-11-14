@@ -78,7 +78,7 @@ def load_page_data(
         try:
             telemetry = get_telemetry()
             processes = get_processes()
-        except service.DashboardDataError as exc:
+        except (service.DashboardDataError, FileNotFoundError) as exc:
             st.warning(f"Local telemetry is unavailable: {exc}")
             st.info(
                 "Raw telemetry is intentionally excluded from the repository. "

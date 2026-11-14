@@ -100,6 +100,25 @@ class DashboardPageSmokeTests(unittest.TestCase):
             self.assertGreater(len(app.get("plotly_chart")), 0)
             self.assertGreater(len(app.get("json")), 0)
 
+    def test_missing_raw_csv_is_reported_as_optional_dashboard_data(self) -> None:
+        import tempfile
+
+        missing = Path(tempfile.gettempdir()) / "os_performance_missing_telemetry_regression.csv"
+        self.assertFalse(missing.exists())
+        with self.assertRaisesRegex(data_service.DashboardDataError, "Telemetry file not found"):
+            data_service.load_telemetry(missing)
+
+    def test_offline_data_pipelines_refuse_to_run_as_streamlit_entrypoints(self) -> None:
+        from unittest.mock import Mock
+        from os_performance_prediction import profile_telemetry, runtime_guard
+        from os_performance_prediction.experiments import windows_forecast
+
+        with patch.object(runtime_guard, "is_streamlit_context", return_value=True):
+            with patch("streamlit.error", new=Mock()) as streamlit_error:
+                self.assertEqual(profile_telemetry.main(), 0)
+                self.assertEqual(windows_forecast.main(), 0)
+                self.assertEqual(streamlit_error.call_count, 2)
+
     def test_shap_utility_does_not_run_pipeline_inside_streamlit(self) -> None:
         from unittest.mock import Mock
         from os_performance_prediction.explainability import shap_analysis

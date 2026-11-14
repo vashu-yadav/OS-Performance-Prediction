@@ -3,11 +3,17 @@ from __future__ import annotations
 
 import argparse
 import json
+import sys
 from pathlib import Path
 from typing import Any
 
 import numpy as np
 import pandas as pd
+
+if __package__ in (None, ""):
+    sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+
+from os_performance_prediction.runtime_guard import reject_streamlit_pipeline_entrypoint
 
 PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DEFAULT_DATA = PROJECT_ROOT / "data" / "raw" / "windows_telemetry.csv"
@@ -189,6 +195,8 @@ def analyze_dataset(path: Path) -> dict[str, Any]:
 
 
 def main() -> int:
+    if reject_streamlit_pipeline_entrypoint("Telemetry profiling"):
+        return 0
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
     parser.add_argument("--report", type=Path, default=DEFAULT_REPORT)

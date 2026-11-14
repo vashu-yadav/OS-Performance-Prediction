@@ -26,17 +26,25 @@ class DashboardDataError(RuntimeError):
 
 def available_telemetry_path() -> Path:
     for path in (RAW_PRIMARY, RAW_LEGACY):
-        if path.is_file() and path.stat().st_size:
-            return path
+        try:
+            if path.is_file() and path.stat().st_size:
+                return path
+        except OSError:
+            # A deployment may not contain local telemetry, or a file may be
+            # removed between the existence check and stat(). Treat both as
+            # unavailable optional input rather than a dashboard startup error.
+            continue
     raise DashboardDataError("No telemetry CSV found. Start a labeled collection from the README instructions.")
 
 
 def load_telemetry(path: Path | None = None) -> pd.DataFrame:
     source = path or available_telemetry_path()
-    if not source.is_file():
-        raise DashboardDataError(f"Telemetry file not found: {source}")
     try:
+        if not source.is_file():
+            raise DashboardDataError(f"Telemetry file not found: {source}")
         frame = pd.read_csv(source, low_memory=False)
+    except DashboardDataError:
+        raise
     except (OSError, pd.errors.ParserError, UnicodeError) as exc:
         raise DashboardDataError(f"Could not read telemetry CSV: {exc}") from exc
     required = {
