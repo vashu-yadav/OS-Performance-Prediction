@@ -1,0 +1,19 @@
+{
+  "method": "TreeExplainer",
+  "selection": "lowest validation RMSE among five fitted regressors, independently per target",
+  "explained_partition": "chronological held-out test rows; never used for model selection",
+  "test_rows_per_target": 234,
+  "feature_count": 81,
+  "selected_models": {
+    "cpu": "CatBoost",
+    "ram": "Random Forest"
+  },
+  "shap_version": "0.48.0",
+  "outputs": [
+    "shap_values_test.csv",
+    "shap_feature_summary.csv",
+    "shap_summary_cpu.png",
+    "shap_summary_ram.png"
+  ],
+  "interpretation_limit": "SHAP attributes model output across observed features; it does not establish causal effects or cross-device generalization."
+}

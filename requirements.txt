@@ -1,0 +1,23 @@
+﻿# Pin set intended for 64-bit CPython 3.12 on Windows.
+# These package pins were installed and import-verified on 64-bit CPython 3.12.10 / Windows 11 in the project .venv.
+# Direct requirements are pinned; dependency resolver selected Windows wheels. Transitive dependencies are resolved by pip.
+pandas==2.3.1
+numpy==2.2.6
+scipy==1.15.3
+scikit-learn==1.6.1
+xgboost==3.0.2
+lightgbm==4.6.0
+catboost==1.2.8
+shap==0.48.0
+matplotlib==3.10.3
+seaborn==0.13.2
+plotly==6.2.0
+streamlit==1.47.1
+psutil==7.0.0
+joblib==1.5.1
+requests==2.32.4
+tqdm==4.67.1
+pyarrow==20.0.0
+jupyter==1.1.1
+ipykernel==6.30.1
+

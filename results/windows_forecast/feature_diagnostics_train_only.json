@@ -1,0 +1,23 @@
+{
+  "constant_features_dropped_using_train_only": [],
+  "high_correlation_pairs_retained_for_tree_models_threshold_0_995": [
+    {
+      "feature_a": "current__disk_usage_percent",
+      "feature_b": "lag_1s__disk_usage_percent",
+      "pearson_r": 0.9957055148256796
+    },
+    {
+      "feature_a": "lag_5s__disk_usage_percent",
+      "feature_b": "rolling_10s_mean__disk_usage_percent",
+      "pearson_r": 0.9957562679213471
+    },
+    {
+      "feature_a": "lag_5s__running_process_count",
+      "feature_b": "rolling_10s_mean__running_process_count",
+      "pearson_r": 0.9959732833882956
+    }
+  ],
+  "feature_count_before_constant_drop": 81,
+  "feature_count_after_constant_drop": 81,
+  "note": "High-correlation pairs are reported but retained; tree regressors do not require scaled orthogonal predictors, and validation/test statistics were not used for feature selection."
+}
