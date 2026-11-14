@@ -4,6 +4,8 @@ from __future__ import annotations
 import os
 import sys
 import unittest
+from contextlib import redirect_stdout
+from io import StringIO
 from pathlib import Path
 from unittest.mock import patch
 
@@ -80,6 +82,41 @@ class DashboardPageSmokeTests(unittest.TestCase):
         for page in ("Live Monitoring", "Historical & Workloads", "30-Second Forecast", "Model Evaluation", "SHAP & Reports"):
             app.radio[0].set_value(page).run()
             self.assertFalse(app.exception, f"{page}: {app.exception}")
+
+    def test_dashboard_starts_without_raw_telemetry_and_keeps_saved_results_available(self) -> None:
+        import streamlit as st
+        from streamlit.testing.v1 import AppTest
+
+        st.cache_data.clear()
+        missing = PROJECT_ROOT / "data" / "raw" / "deployment_test_data_not_present.csv"
+        app_path = PROJECT_ROOT / "src" / "os_performance_prediction" / "dashboard" / "app.py"
+        with patch.object(data_service, "RAW_PRIMARY", missing), patch.object(data_service, "RAW_LEGACY", missing):
+            app = AppTest.from_file(str(app_path), default_timeout=60).run()
+            self.assertFalse(app.exception, str(app.exception))
+            self.assertTrue(any("Historical telemetry is not present" in item.value for item in app.info))
+            for page in ("Historical & Workloads", "30-Second Forecast", "Model Evaluation", "SHAP & Reports"):
+                app.radio[0].set_value(page).run()
+                self.assertFalse(app.exception, f"{page} without raw CSV: {app.exception}")
+            self.assertGreater(len(app.get("plotly_chart")), 0)
+            self.assertGreater(len(app.get("json")), 0)
+
+    def test_shap_utility_does_not_run_pipeline_inside_streamlit(self) -> None:
+        from unittest.mock import Mock
+        from os_performance_prediction.explainability import shap_analysis
+
+        with patch.object(shap_analysis, "create_shap_outputs", side_effect=AssertionError("pipeline must not run")):
+            with patch("streamlit.error", new=Mock()) as streamlit_error:
+                self.assertEqual(shap_analysis.main(["--generate"], streamlit_context=True), 0)
+                streamlit_error.assert_called_once()
+
+    def test_importing_or_running_shap_utility_without_generate_does_not_read_data(self) -> None:
+        from os_performance_prediction.explainability import shap_analysis
+
+        with patch.object(shap_analysis, "create_shap_outputs", side_effect=AssertionError("pipeline must not run")):
+            output = StringIO()
+            with redirect_stdout(output):
+                self.assertEqual(shap_analysis.main([], streamlit_context=False), 0)
+            self.assertIn("pass --generate", output.getvalue())
 
 
 if __name__ == "__main__":

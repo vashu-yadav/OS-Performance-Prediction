@@ -2,17 +2,9 @@
 from __future__ import annotations
 
 import json
+import argparse
 import sys
 from pathlib import Path
-
-import joblib
-import matplotlib
-import numpy as np
-import pandas as pd
-import shap
-
-matplotlib.use("Agg")
-import matplotlib.pyplot as plt
 
 PROJECT_ROOT = Path(__file__).resolve().parents[3]
 DEFAULT_DATA = PROJECT_ROOT / "data" / "raw" / "windows_telemetry.csv"
@@ -26,6 +18,17 @@ def create_shap_outputs(
     results_dir: Path = DEFAULT_RESULTS,
     artifacts_dir: Path = DEFAULT_ARTIFACTS,
 ) -> dict[str, object]:
+    # Heavy analysis dependencies and all data access stay inside this explicit
+    # call so importing this module is safe in Streamlit and other applications.
+    import joblib
+    import matplotlib
+    import numpy as np
+    import pandas as pd
+    import shap
+
+    matplotlib.use("Agg")
+    import matplotlib.pyplot as plt
+
     sys.path.insert(0, str(PROJECT_ROOT / "src"))
     from os_performance_prediction.features.windows_features import (  # noqa: PLC0415
         build_supervised_frame,
@@ -103,5 +106,43 @@ def create_shap_outputs(
     return report
 
 
+def _is_running_inside_streamlit() -> bool:
+    try:
+        from streamlit.runtime.scriptrunner import get_script_run_ctx
+    except ImportError:
+        return False
+    return get_script_run_ctx(suppress_warning=True) is not None
+
+
+def main(argv: list[str] | None = None, streamlit_context: bool | None = None) -> int:
+    if streamlit_context is None:
+        streamlit_context = _is_running_inside_streamlit()
+    if streamlit_context:
+        import streamlit as st
+
+        st.error(
+            "This is the offline SHAP generation utility, not the dashboard entry point. "
+            "Configure Streamlit Community Cloud to run "
+            "src/os_performance_prediction/dashboard/app.py. "
+            "SHAP generation is not run during dashboard startup."
+        )
+        return 0
+    parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument(
+        "--generate",
+        action="store_true",
+        help="Explicitly run SHAP generation from local telemetry and saved test predictions.",
+    )
+    parser.add_argument("--data", type=Path, default=DEFAULT_DATA)
+    parser.add_argument("--results", type=Path, default=DEFAULT_RESULTS)
+    parser.add_argument("--artifacts", type=Path, default=DEFAULT_ARTIFACTS)
+    args = parser.parse_args(argv)
+    if not args.generate:
+        print("No SHAP work was run. To generate SHAP outputs explicitly, pass --generate.")
+        return 0
+    print(json.dumps(create_shap_outputs(args.data, args.results, args.artifacts), indent=2))
+    return 0
+
+
 if __name__ == "__main__":
-    print(json.dumps(create_shap_outputs(), indent=2))
+    raise SystemExit(main())

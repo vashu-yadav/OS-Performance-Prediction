@@ -68,6 +68,8 @@ Launch the local application from PowerShell:
 
 The six pages are Overview, Live Monitoring, Historical & Workloads, 30-Second Forecast, Model Evaluation, and SHAP & Reports. The forecast page loads the existing ten model artifacts and defaults to each target's saved validation-RMSE model and lets users select any of the five saved regressors. All ten artifacts are loadable from the evaluation page. It requires at least 30 seconds of uninterrupted telemetry history and displays the model's actual held-out test metrics. It never trains or fabricates a forecast. The optional LLM explanation uses `OS_PERFORMANCE_LLM_API_KEY` from the environment and optionally `OS_PERFORMANCE_LLM_BASE_URL` / `OS_PERFORMANCE_LLM_MODEL`. Without a key it uses the deterministic evidence-based fallback. API calls are user-triggered; process details are not sent. The API request path is implemented but has not been verified against a live provider account.
 
+For Streamlit Community Cloud, set the app's main file to `src/os_performance_prediction/dashboard/app.py`. Do not use `src/os_performance_prediction/explainability/shap_analysis.py` as the app file; it is an explicit offline analysis utility. Raw telemetry is intentionally not committed. Without a local CSV, the app still displays saved model evaluation, artifacts, and SHAP summaries; historical and forecast pages explain when local collection is needed.
+
 Workload summaries are descriptive comparisons of user-labeled sessions, not controlled experiments. Do not use the forecasts for safety-critical or automatic resource management decisions.
 
 ## Privacy and limitations

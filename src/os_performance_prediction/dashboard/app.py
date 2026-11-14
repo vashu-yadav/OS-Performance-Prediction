@@ -64,13 +64,28 @@ def load_model_registry() -> dict:
     return service.load_all_artifacts()
 
 
-def load_page_data() -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame]:
+def load_page_data(
+    include_telemetry: bool = True,
+) -> tuple[pd.DataFrame | None, pd.DataFrame, pd.DataFrame | None]:
+    telemetry: pd.DataFrame | None = None
+    processes = pd.DataFrame()
+    metrics: pd.DataFrame | None = None
     try:
-        return get_telemetry(), get_processes(), get_metrics()
+        metrics = get_metrics()
     except service.DashboardDataError as exc:
-        st.error(str(exc))
-        st.info("Collect labeled Windows telemetry using the PowerShell command in README.md. Existing Phase 3 model artifacts and evaluation files are preserved.")
-        st.stop()
+        st.warning(f"Saved evaluation metrics are unavailable: {exc}")
+    if include_telemetry:
+        try:
+            telemetry = get_telemetry()
+            processes = get_processes()
+        except service.DashboardDataError as exc:
+            st.warning(f"Local telemetry is unavailable: {exc}")
+            st.info(
+                "Raw telemetry is intentionally excluded from the repository. "
+                "Saved models, evaluation metrics, and SHAP reports remain available. "
+                "Collect local Windows telemetry to enable history and forecasting."
+            )
+    return telemetry, processes, metrics
 
 
 def display_download(label: str, name: str, data: bytes | str, mime: str) -> None:
@@ -79,29 +94,33 @@ def display_download(label: str, name: str, data: bytes | str, mime: str) -> Non
 
 if page == "Overview":
     telemetry, _, metrics = load_page_data()
-    latest = telemetry.iloc[-1]
-    timestamp = latest.timestamp_utc
     st.subheader("Project overview")
     st.write("A local Windows telemetry case study with an existing, leakage-controlled 30-second CPU/RAM model evaluation. Live readings and historical predictions are deliberately shown separately.")
-    cols = st.columns(4)
-    for col, label, value, suffix in zip(
-        cols,
-        ("Latest CPU", "Latest RAM", "Disk capacity used", "Active processes"),
-        (latest.cpu_utilization_percent, latest.ram_utilization_percent, latest.disk_usage_percent, latest.running_process_count),
-        ("%", "%", "%", ""),
-    ):
-        col.metric(label, "Unavailable" if pd.isna(value) else f"{value:.1f}{suffix}")
-    st.caption(f"Latest recorded sample: {timestamp.isoformat() if pd.notna(timestamp) else 'unknown'} | Sessions: {telemetry.collection_session_id.nunique()} | Rows: {len(telemetry):,}")
-    cpu_status = "High" if latest.cpu_utilization_percent >= 85 else "Elevated" if latest.cpu_utilization_percent >= 70 else "Normal"
-    ram_status = "High" if latest.ram_utilization_percent >= 90 else "Elevated" if latest.ram_utilization_percent >= 80 else "Normal"
-    st.markdown(f"**Latest recorded system health:** CPU {cpu_status} · RAM {ram_status} · Historical record only")
+    if telemetry is None or telemetry.empty:
+        st.info("Historical telemetry is not present in this repository. Collect local data to show recorded system health; live monitoring is available on its own page.")
+    else:
+        latest = telemetry.iloc[-1]
+        timestamp = latest.timestamp_utc
+        cols = st.columns(4)
+        for col, label, value, suffix in zip(
+            cols,
+            ("Latest CPU", "Latest RAM", "Disk capacity used", "Active processes"),
+            (latest.cpu_utilization_percent, latest.ram_utilization_percent, latest.disk_usage_percent, latest.running_process_count),
+            ("%", "%", "%", ""),
+        ):
+            col.metric(label, "Unavailable" if pd.isna(value) else f"{value:.1f}{suffix}")
+        st.caption(f"Latest recorded sample: {timestamp.isoformat() if pd.notna(timestamp) else 'unknown'} | Sessions: {telemetry.collection_session_id.nunique()} | Rows: {len(telemetry):,}")
+        cpu_status = "High" if latest.cpu_utilization_percent >= 85 else "Elevated" if latest.cpu_utilization_percent >= 70 else "Normal"
+        ram_status = "High" if latest.ram_utilization_percent >= 90 else "Elevated" if latest.ram_utilization_percent >= 80 else "Normal"
+        st.markdown(f"**Latest recorded system health:** CPU {cpu_status} · RAM {ram_status} · Historical record only")
+        fig = px.line(telemetry.tail(600), x="timestamp_utc", y=["cpu_utilization_percent", "ram_utilization_percent"], labels={"value": "Utilization (%)", "timestamp_utc": "Time", "variable": "Metric"}, title="Recent historical telemetry (up to 600 rows)")
+        st.plotly_chart(fig, use_container_width=True)
     st.warning("The held-out evaluation is weak: all CPU models had negative test R², and RAM persistence outperformed the fitted regressors by RMSE. Use forecasts for demonstration, not operational decisions.")
-    fig = px.line(telemetry.tail(600), x="timestamp_utc", y=["cpu_utilization_percent", "ram_utilization_percent"], labels={"value": "Utilization (%)", "timestamp_utc": "Time", "variable": "Metric"}, title="Recent historical telemetry (up to 600 rows)")
-    st.plotly_chart(fig, use_container_width=True)
     st.subheader("Evaluation health summary")
-    test = metrics[metrics.split == "test"]
-    best = test.loc[test.groupby("target").rmse.idxmin(), ["target", "model", "mae", "rmse", "r2"]]
-    st.dataframe(best, hide_index=True, use_container_width=True)
+    if metrics is not None:
+        test = metrics[metrics.split == "test"]
+        best = test.loc[test.groupby("target").rmse.idxmin(), ["target", "model", "mae", "rmse", "r2"]]
+        st.dataframe(best, hide_index=True, use_container_width=True)
 
 elif page == "Live Monitoring":
     st.subheader("Live Windows system monitoring")
@@ -141,6 +160,9 @@ elif page == "Live Monitoring":
 elif page == "Historical & Workloads":
     telemetry, processes, _ = load_page_data()
     st.subheader("Historical telemetry and workload context")
+    if telemetry is None or telemetry.empty:
+        st.warning("Historical analysis needs a local telemetry CSV. The repository intentionally contains no raw machine telemetry.")
+        st.stop()
     if "workload_label" in telemetry and telemetry.workload_label.fillna("").astype(str).str.len().gt(0).any():
         labels = ["All"] + sorted(telemetry.workload_label.fillna("").replace("", "Unlabeled").unique().tolist())
         chosen = st.selectbox("Workload category", labels)
@@ -180,6 +202,13 @@ elif page == "30-Second Forecast":
     telemetry, _, metrics = load_page_data()
     st.subheader("CPU and RAM forecast")
     st.warning("Experimental single-machine predictions. Models use the existing training feature contract and were not retrained in the dashboard.")
+    if metrics is None:
+        st.warning("Forecast model selection requires the saved evaluation metrics.")
+        st.stop()
+    if telemetry is None or telemetry.empty:
+        st.info("Forecasting needs at least 30 seconds of local uninterrupted telemetry. Existing saved models and test metrics are available below.")
+        st.dataframe(metrics[metrics.split == "test"], hide_index=True, use_container_width=True)
+        st.stop()
     defaults = service.validation_selected_models(metrics)
     selector_cols = st.columns(2)
     selected_models = {
@@ -230,9 +259,12 @@ elif page == "30-Second Forecast":
                 st.caption(f"Optional API was unavailable; deterministic fallback used ({result['api_error']}).")
 
 elif page == "Model Evaluation":
-    telemetry, _, metrics = load_page_data()
+    _, _, metrics = load_page_data(include_telemetry=False)
     st.subheader("Existing Phase 3 model evaluation")
     st.caption("No training is performed here. Values below are from saved validation and chronological held-out test results.")
+    if metrics is None:
+        st.warning("The saved evaluation metrics could not be loaded.")
+        st.stop()
     if st.button("Load and validate all ten saved model artifacts"):
         with st.spinner("Loading the existing model artifacts (no fitting)..."):
             try:
@@ -264,6 +296,15 @@ elif page == "Model Evaluation":
 else:  # SHAP & Reports
     telemetry, _, metrics = load_page_data()
     st.subheader("SHAP explanations and downloadable reports")
+    try:
+        shap_report = service.load_json_report("shap_report.json")
+        st.caption(
+            f"Saved explanation method: {shap_report.get('method', 'unavailable')} · "
+            f"held-out rows per target: {shap_report.get('test_rows_per_target', 'unavailable')}"
+        )
+        st.json(shap_report)
+    except service.DashboardDataError as exc:
+        st.warning(f"Saved SHAP report metadata is unavailable: {exc}")
     shap_path = service.RESULTS / "shap_feature_summary.csv"
     if shap_path.is_file():
         shap_summary = pd.read_csv(shap_path)
@@ -278,13 +319,20 @@ else:  # SHAP & Reports
     else:
         st.warning("Saved SHAP summary is unavailable. No replacement explanation is fabricated.")
     st.subheader("Dataset and collection statistics")
-    st.json({"telemetry_rows": len(telemetry), "columns": list(telemetry.columns), "collection_sessions": int(telemetry.collection_session_id.nunique()), "first_sample_utc": telemetry.timestamp_utc.min().isoformat(), "last_sample_utc": telemetry.timestamp_utc.max().isoformat(), "missing_values": telemetry.isna().sum().to_dict(), "workload_counts": service.summarize_workloads(telemetry)[1]})
-    display_download("Download collected telemetry dataset", "windows_telemetry_snapshot.csv", telemetry.to_csv(index=False).encode("utf-8"), "text/csv")
-    display_download("Download model comparison metrics", "evaluation_metrics.csv", metrics.to_csv(index=False).encode("utf-8"), "text/csv")
-    try:
-        defaults = service.validation_selected_models(metrics)
-        forecast_bytes = get_predictions(telemetry.to_json(orient="records", date_format="iso"), metrics.to_json(orient="records"), json.dumps(defaults, sort_keys=True)).to_csv(index=False).encode("utf-8")
-    except service.DashboardDataError:
+    if telemetry is None or telemetry.empty:
+        st.info("No local dataset statistics are available until telemetry is collected on this machine.")
+    else:
+        st.json({"telemetry_rows": len(telemetry), "columns": list(telemetry.columns), "collection_sessions": int(telemetry.collection_session_id.nunique()), "first_sample_utc": telemetry.timestamp_utc.min().isoformat(), "last_sample_utc": telemetry.timestamp_utc.max().isoformat(), "missing_values": telemetry.isna().sum().to_dict(), "workload_counts": service.summarize_workloads(telemetry)[1]})
+        display_download("Download collected telemetry dataset", "windows_telemetry_snapshot.csv", telemetry.to_csv(index=False).encode("utf-8"), "text/csv")
+    if metrics is not None:
+        display_download("Download model comparison metrics", "evaluation_metrics.csv", metrics.to_csv(index=False).encode("utf-8"), "text/csv")
+    if telemetry is not None and not telemetry.empty and metrics is not None:
+        try:
+            defaults = service.validation_selected_models(metrics)
+            forecast_bytes = get_predictions(telemetry.to_json(orient="records", date_format="iso"), metrics.to_json(orient="records"), json.dumps(defaults, sort_keys=True)).to_csv(index=False).encode("utf-8")
+        except service.DashboardDataError:
+            forecast_bytes = None
+    else:
         forecast_bytes = None
     if forecast_bytes is not None:
         display_download("Download prediction results", "windows_30_second_predictions.csv", forecast_bytes, "text/csv")
@@ -292,13 +340,13 @@ else:  # SHAP & Reports
         st.info("Prediction download unavailable: insufficient uninterrupted history or a missing model artifact. No placeholder result was generated.")
     report = {
         "generated_at_utc": datetime.now(timezone.utc).isoformat(),
-        "telemetry_file": str(service.available_telemetry_path()),
-        "row_count": int(len(telemetry)),
-        "session_count": int(telemetry.collection_session_id.nunique()),
-        "workload_counts": service.summarize_workloads(telemetry)[1],
-        "latest_cpu_percent": float(telemetry.iloc[-1].cpu_utilization_percent),
-        "latest_ram_percent": float(telemetry.iloc[-1].ram_utilization_percent),
-        "test_results": metrics[metrics.split == "test"].to_dict("records"),
+        "telemetry_file": str(service.available_telemetry_path()) if telemetry is not None and not telemetry.empty else None,
+        "row_count": int(len(telemetry)) if telemetry is not None else None,
+        "session_count": int(telemetry.collection_session_id.nunique()) if telemetry is not None else None,
+        "workload_counts": service.summarize_workloads(telemetry)[1] if telemetry is not None else {},
+        "latest_cpu_percent": float(telemetry.iloc[-1].cpu_utilization_percent) if telemetry is not None and not telemetry.empty else None,
+        "latest_ram_percent": float(telemetry.iloc[-1].ram_utilization_percent) if telemetry is not None and not telemetry.empty else None,
+        "test_results": metrics[metrics.split == "test"].to_dict("records") if metrics is not None else [],
         "limitations": ["Single-machine telemetry", "Short collection with weak forecast results", "Workload labels are user assigned", "SHAP is not causal"],
     }
     display_download("Download system analysis report", "windows_system_analysis.json", json.dumps(report, indent=2).encode("utf-8"), "application/json")
